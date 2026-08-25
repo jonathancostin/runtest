@@ -1,7 +1,52 @@
 # RunTest
 
-RunTest is a command seam for routing coding-agent test commands. The current
-tracer bullet runs commands locally without changing their observable behavior.
+RunTest is a command seam for routing coding-agent test commands. It gives every
+RunTest process for the signed-in macOS account the same Local or Auto mode.
+
+## Choose a mode
+
+Check the current mode without changing it:
+
+```sh
+runtest status
+runtest status --json
+```
+
+The JSON form reports the mode, whether it came from saved state or the safe
+default, and whether Auto's background policy is available.
+
+Change the mode for commands started later:
+
+```sh
+runtest mode local
+runtest mode auto
+```
+
+RunTest saves the choice at
+`~/Library/Application Support/RunTest/mode`. A mode update writes a complete
+new file and then atomically replaces the old file, so processes reading or
+writing at the same time cannot see a partial value.
+
+If the state file is missing, RunTest uses Local. RunTest asks macOS for the
+account's home folder instead of trusting a process's `HOME` value, so callers
+cannot split the shared mode by changing their environment. Reading status does
+not create or change the state file.
+
+Local executes the requested command directly. Auto executes it through the
+macOS background policy:
+
+```sh
+taskpolicy -b <command> [arguments ...]
+```
+
+If `taskpolicy` is unavailable, status names the configured fallback as
+`direct local execution`. Auto prints the same fallback to standard error and
+runs the command directly. It never claims that the background policy was
+applied.
+
+Each invocation reads the mode once before it starts the requested command.
+Changing the mode affects later invocations and does not interrupt or migrate a
+command that is already running.
 
 ## Run a command
 
