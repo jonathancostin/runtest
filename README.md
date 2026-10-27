@@ -1,92 +1,77 @@
 # RunTest
 
-RunTest is a command seam for routing coding-agent test commands. It gives every
-RunTest process for the signed-in macOS account the same Local or Auto mode.
+RunTest is a small C17 command seam, `runtest <command> [arguments ...]`, that routes coding-agent test commands by one shared mode per macOS account: Local runs the command directly, Auto runs it under the macOS background policy (`taskpolicy -b`). It passes arguments without shell parsing, keeps the caller's working directory, environment and stdio, and returns the command's exit code or signal.
 
-## Choose a mode
+## Status
 
-Check the current mode without changing it:
+- Early stage. Only the Local and Auto modes exist today; the remote execution mentioned in the GitHub description is not built yet.
+- The open GitHub issues describe the roadmap (as of 2026-10-20): shared test-command router (#1), Crabbox remote routing (#5), local timing evidence (#6), recommending remote suites (#7), guided Local/Auto and Remote setup (#8, #9), a native menu-bar app and project routing (#10, #11), SketchyBar controls (#12), diagnosing stuck installs (#13), Homebrew tap install and releases (#14, #15).
+- macOS only (`taskpolicy`, Application Support path).
+- No CI.
 
-```sh
-runtest status
-runtest status --json
-```
+## Stack
 
-The JSON form reports the mode, whether it came from saved state or the safe
-default, and whether Auto's background policy is available.
+- C (`src/runtest.c`), built with `cc -std=c17 -Wall -Wextra -Wpedantic -Werror`.
+- Python `unittest` test suite that runs the binary as an external process.
+- Make.
 
-Change the mode for commands started later:
-
-```sh
-runtest mode local
-runtest mode auto
-```
-
-RunTest saves the choice at
-`~/Library/Application Support/RunTest/mode`. A mode update writes a complete
-new file and then atomically replaces the old file, so processes reading or
-writing at the same time cannot see a partial value.
-
-If the state file is missing, RunTest uses Local. RunTest asks macOS for the
-account's home folder instead of trusting a process's `HOME` value, so callers
-cannot split the shared mode by changing their environment. Reading status does
-not create or change the state file.
-
-Local executes the requested command directly. Auto executes it through the
-macOS background policy:
-
-```sh
-taskpolicy -b <command> [arguments ...]
-```
-
-If `taskpolicy` is unavailable, status names the configured fallback as
-`direct local execution`. Auto prints the same fallback to standard error and
-runs the command directly. It never claims that the background policy was
-applied.
-
-Each invocation reads the mode once before it starts the requested command.
-Changing the mode affects later invocations and does not interrupt or migrate a
-command that is already running.
-
-## Run a command
-
-Build the executable with the system C compiler:
+## Build and run
 
 ```sh
 make build
-```
-
-Then invoke it from this checkout:
-
-```sh
 ./bin/runtest npm test
 ./bin/runtest python3 -m unittest
 ```
 
-When `bin` is on your `PATH`, the canonical interface is:
-
-```sh
-runtest <command> [arguments ...]
-```
-
-RunTest passes each argument directly to the command. It also preserves the
-caller's working directory and environment, keeps standard output and standard
-error connected, and returns the command's exit code or termination signal.
-Commands do not need to use npm.
-
-RunTest does not interpret shell syntax. Invoke a shell explicitly when shell
-behavior is wanted:
+With `bin` on `PATH`: `runtest <command> [arguments ...]`. Commands do not need to use npm. RunTest does not interpret shell syntax; call a shell explicitly when needed:
 
 ```sh
 runtest sh -c 'printf "%s\n" "$HOME"'
 ```
 
-Invoking `runtest` without a command prints usage and exits with status 64.
+`runtest` with no command prints usage and exits 64.
 
-## Test the command seam
-
-The test suite exercises the executable as an external process:
+## Modes
 
 ```sh
-make test
+runtest status
+runtest status --json
+runtest mode local
+runtest mode auto
 ```
+
+- `status --json` reports the mode, whether it came from saved state or the safe default, and whether Auto's background policy is available. Reading status does not create or change the state file.
+- The mode is stored at `~/Library/Application Support/RunTest/mode`. An update writes a complete new file and atomically replaces the old one, so concurrent readers never see a partial value. A missing file means Local.
+- RunTest asks macOS for the account's home folder instead of trusting `HOME`, so callers cannot split the shared mode by changing their environment.
+- Auto runs `taskpolicy -b <command> [arguments ...]`. If `taskpolicy` is missing, status names the fallback as `direct local execution`, and Auto prints the same notice to stderr and runs the command directly. It never claims the background policy was applied.
+- Each invocation reads the mode once before it starts the command; changing it affects later invocations only and never interrupts a running command.
+
+## Tests
+
+```sh
+make test    # builds bin/runtest-test with -DRUNTEST_TESTING, runs the unittest suite in tests/
+make check   # syntax-only compile of both builds + python3 -m compileall tests
+```
+
+## Configuration
+
+No configuration environment variables; commands are looked up on the caller's `PATH`. The test build alone reads `RUNTEST_TEST_ACCOUNT_HOME`, and `make test` passes the test binary to the suite as `RUNTEST_UNDER_TEST`.
+
+## Layout
+
+```text
+src/runtest.c     the command seam
+tests/            Python unittest suite (test_cli.py)
+Makefile          build, test, check
+AGENTS.md         agent guide
+docs/agents/      domain.md, issue-tracker.md, triage-labels.md
+```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+## Links
+
+- Issues: https://github.com/jonathancostin/runtest/issues
+- Related: [execution-target-switch](https://github.com/jonathancostin/execution-target-switch), a related project built around the same Local / low-impact / remote idea.
